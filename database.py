@@ -93,7 +93,11 @@ def simpan_histori(status_pakan):
 
 def ambil_data_histori():
     conn = get_connection()
-    df = pd.read_sql_query('SELECT tanggal, waktu, status_pakan FROM history_pakan ORDER BY tanggal DESC, waktu DESC', conn)
+    cursor = conn.cursor()
+    cursor.execute('SELECT tanggal, waktu, status_pakan FROM history_pakan ORDER BY tanggal DESC, waktu DESC')
+    rows = cursor.fetchall()
+    df = pd.DataFrame(rows, columns=['tanggal', 'waktu', 'status_pakan'])
+    cursor.close()
     conn.close()
     return df
 
@@ -115,7 +119,11 @@ def simpan_perintah(pemicu):
 
 def ambil_data_perintah():
     conn = get_connection()
-    df = pd.read_sql_query('SELECT tanggal, waktu, pemicu FROM riwayat_perintah ORDER BY tanggal DESC, waktu DESC', conn)
+    cursor = conn.cursor()
+    cursor.execute('SELECT tanggal, waktu, pemicu FROM riwayat_perintah ORDER BY tanggal DESC, waktu DESC')
+    rows = cursor.fetchall()
+    df = pd.DataFrame(rows, columns=['tanggal', 'waktu', 'pemicu'])
+    cursor.close()
     conn.close()
     return df
 
