@@ -517,6 +517,11 @@ elif menu == "🎛️ Kendali Alat":
                     # GUNAKAN HELPER BAWAAN: Eksekusi instan tanpa membuka koneksi baru
                     if publish_mqtt(topic="PI_fishfeeder/control/feed", payload="1"):
                         _add_log("KONTROL", "Beri Pakan -> PI_fishfeeder/control/feed")
+                        
+                        import database
+                        if not database.simpan_perintah("Beri Pakan (Manual)"):
+                            st.error("❌ Gagal menyimpan riwayat perintah ke Supabase.")
+                            
                         st.session_state.notif_msg = "Perintah Beri Pakan berhasil dieksekusi!"
                         st.session_state.notif_type = "success"
                         st.session_state.notif_time = time.time()

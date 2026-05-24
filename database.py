@@ -63,8 +63,10 @@ def simpan_perintah(pemicu):
             "pemicu": pemicu
         }
         supabase.table("riwayat_perintah").insert(data).execute()
+        return True
     except Exception as e:
-        print(f"Error simpan_perintah: {e}")
+        st.error(f"Gagal Insert Supabase: {str(e)}")
+        return False
 
 def ambil_data_perintah():
     try:
