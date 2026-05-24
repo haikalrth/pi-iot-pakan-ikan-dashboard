@@ -316,11 +316,21 @@ if mqtt_client.iot_data["mqtt_connected"]:
 else:
     st.warning("● Menghubungkan ke Jaringan...")
 
+# Hitung selisih detik (Watchdog Evaluator Global)
+last_seen = mqtt_client.iot_data.get("last_seen", 0)
+detik_berlalu = int(time.time() - last_seen)
+
+if last_seen == 0 or detik_berlalu > 15:
+    mqtt_client.iot_data["device_status"] = "Offline"
+else:
+    mqtt_client.iot_data["device_status"] = "Online"
+
 # Tarik data untuk keperluan global
 status_pakan_global = mqtt_client.iot_data.get("stok_pakan", "").lower()
+dev_status_global = mqtt_client.iot_data["device_status"]
 
 # Banner Tunggal Global
-if status_pakan_global == "habis":
+if status_pakan_global == "habis" and dev_status_global == "Online":
     st.error("⚠️ **PERINGATAN:** Stok pakan ikan habis! Segera isi ulang tempat pakan.")
 
 
@@ -336,17 +346,26 @@ if menu == "🏠 Beranda (Monitoring)":
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            pakan = mqtt_client.iot_data["stok_pakan"]
-            delta_pakan = "✅ Aman" if pakan.lower() == "aman" else (
-                "⚠️ Habis" if pakan.lower() == "habis" else None
-            )
-            st.metric(
-                label="🍚 STOK PAKAN",
-                value=pakan,
-                delta=delta_pakan,
-                delta_color="normal" if pakan.lower() == "aman" else "inverse",
-                help="Indikator ketersediaan pelet di dalam wadah berdasarkan sensor jarak/IR."
-            )
+            if mqtt_client.iot_data["device_status"] == "Offline":
+                st.metric(
+                    label="🍚 STOK PAKAN",
+                    value="Tidak Diketahui",
+                    delta="Mati / Terputus",
+                    delta_color="off",
+                    help="Alat sedang offline, data stok pakan tidak valid."
+                )
+            else:
+                pakan = mqtt_client.iot_data["stok_pakan"]
+                delta_pakan = "✅ Aman" if pakan.lower() == "aman" else (
+                    "⚠️ Habis" if pakan.lower() == "habis" else None
+                )
+                st.metric(
+                    label="🍚 STOK PAKAN",
+                    value=pakan,
+                    delta=delta_pakan,
+                    delta_color="normal" if pakan.lower() == "aman" else "inverse",
+                    help="Indikator ketersediaan pelet di dalam wadah berdasarkan sensor jarak/IR."
+                )
 
         with col2:
             servo = mqtt_client.iot_data["status_servo"]
@@ -374,16 +393,9 @@ if menu == "🏠 Beranda (Monitoring)":
 
         col4, col5, col6 = st.columns(3)
         with col4:
-            # Hitung selisih detik
+            # Hitung selisih detik untuk tampilan
             last_seen = mqtt_client.iot_data.get("last_seen", 0)
             detik_berlalu = int(time.time() - last_seen)
-
-            # Watchdog Evaluator
-            if last_seen == 0 or detik_berlalu > 15:
-                mqtt_client.iot_data["device_status"] = "Offline"
-            else:
-                mqtt_client.iot_data["device_status"] = "Online"
-
             dev = mqtt_client.iot_data["device_status"]
             st.metric(
                 label="💻 STATUS ALAT FEEDER",
