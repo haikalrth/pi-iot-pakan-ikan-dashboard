@@ -264,18 +264,44 @@ if st.session_state['role'] is None:
             submit_admin = st.button("MASUK", type="primary", width="stretch")
 
             if submit_admin:
+                st.write("DEBUG: [1] Memulai proses autentikasi...")
                 if pwd.strip() == "":
                     # Munculkan peringatan jika kolom kosong
                     st.warning("⚠️ Masukkan password terlebih dahulu!")
                 else:
-                    # HUBUNGKAN KE BACKEND DATABASE
-                    if database.cek_login("admin", pwd):
+                    login_berhasil = False
+                    
+                    # Tugas 2: Pemeriksaan Koneksi Database dengan try-except
+                    try:
+                        st.write("DEBUG: [2] Mencoba koneksi ke PostgreSQL Supabase...")
+                        if database.cek_login("admin", pwd):
+                            login_berhasil = True
+                            st.write("DEBUG: [3a] Login via Supabase berhasil.")
+                        else:
+                            st.write("DEBUG: [3b] Login via Supabase gagal (password salah).")
+                    except Exception as e:
+                        st.error(f"DEBUG: [DB ERROR] Gagal terhubung ke Database Cloud: {e}")
+                    
+                    # Tugas 1: Fallback ke Secrets & Diagnostik rahasia
+                    if not login_berhasil:
+                        st.write("DEBUG: [4] Mencoba verifikasi via st.secrets cadangan...")
+                        secret_val = st.secrets.get("admin_password")
+                        if not secret_val:
+                            st.error("DEBUG: Variabel 'admin_password' tidak ditemukan di Cloud Secrets!")
+                        elif pwd == secret_val:
+                            login_berhasil = True
+                            st.write("DEBUG: [5a] Login via Secrets cadangan berhasil.")
+                        else:
+                            st.write("DEBUG: [5b] Login via Secrets gagal.")
+
+                    # Tugas 3 & 4: Validasi Sesi (Session State) & Laporan
+                    if login_berhasil:
+                        st.write("DEBUG: [6] Mengubah State 'role' menjadi 'admin' dan memicu st.rerun()...")
                         st.session_state['role'] = 'admin'
                         st.query_params['role'] = 'admin'
                         st.rerun()
                     else:
-                        st.error("❌ Password salah atau akun tidak ditemukan!")
-
+                        st.error("❌ Password salah atau koneksi gagal! Silakan coba lagi.")
             st.divider()
             # Tombol visitor diletakkan di bawah form login utama
             if st.button("Masuk sebagai Pengunjung (Visitor)", width="stretch"):
