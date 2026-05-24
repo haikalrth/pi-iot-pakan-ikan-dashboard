@@ -3,5 +3,5 @@ paho-mqtt>=1.6.1
 pytz
 pandas
 streamlit-autorefresh
-psycopg2-binary
+supabase
 altair

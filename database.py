@@ -1,147 +1,95 @@
 import streamlit as st
-import psycopg2
-import psycopg2.extras
+from supabase import create_client
 import pandas as pd
 from datetime import datetime
 import pytz
 
-def get_connection():
-    """Membuka koneksi langsung ke Cloud Database Supabase menggunakan URI dari secrets."""
-    conn_url = st.secrets["connections"]["postgresql"]["url"]
-    return psycopg2.connect(conn_url)
+# Inisialisasi client Supabase menggunakan URL dan Key dari secrets
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase = create_client(url, key)
 
 def init_db():
-    """Membuat tabel-tabel terpusat di Supabase Cloud jika belum terbentuk."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    # 1. Tabel Users
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
-        )
-    ''')
-    
-    # 2. Tabel History Pakan
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS history_pakan (
-            id SERIAL PRIMARY KEY,
-            tanggal TEXT NOT NULL,
-            waktu TEXT NOT NULL,
-            status_pakan TEXT NOT NULL
-        )
-    ''')
-    
-    # 3. Tabel Riwayat Perintah Sistem
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS riwayat_perintah (
-            id SERIAL PRIMARY KEY,
-            tanggal TEXT NOT NULL,
-            waktu TEXT NOT NULL,
-            pemicu TEXT NOT NULL
-        )
-    ''')
-    
-    # 4. Tabel Pengaturan Jadwal
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pengaturan_jadwal (
-            id SERIAL PRIMARY KEY,
-            jadwal_str TEXT NOT NULL
-        )
-    ''')
-    
-    # Seeding Akun Admin Default jika kosong
-    cursor.execute('SELECT COUNT(*) FROM users')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', ('admin', 'admin123'))
-        
-    # Seeding Jadwal Default jika kosong
-    cursor.execute('SELECT COUNT(*) FROM pengaturan_jadwal')
-    if cursor.fetchone()[0] == 0:
-        cursor.execute('INSERT INTO pengaturan_jadwal (jadwal_str) VALUES (%s)', ('09:00,16:00',))
-        
-    conn.commit()
-    cursor.close()
-    conn.close()
+    # Pembuatan tabel tidak didukung via ORM Supabase Python client.
+    # Tabel harus sudah dibuat secara manual di dashboard Supabase.
+    pass
 
 def cek_login(username, password):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE username = %s AND password = %s', (username, password))
-    user = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return user is not None
+    try:
+        response = supabase.table("users").select("*").eq("username", username).eq("password", password).execute()
+        return len(response.data) > 0
+    except Exception as e:
+        st.error(f"DEBUG: [API ERROR] {e}")
+        return False
 
 def simpan_histori(status_pakan):
-    wib = pytz.timezone("Asia/Jakarta")
-    now = datetime.now(wib)
-    tanggal = now.strftime("%Y-%m-%d")
-    waktu = now.strftime("%H:%M:%S")
-    
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO history_pakan (tanggal, waktu, status_pakan)
-        VALUES (%s, %s, %s)
-    ''', (tanggal, waktu, status_pakan))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        wib = pytz.timezone("Asia/Jakarta")
+        now = datetime.now(wib)
+        tanggal = now.strftime("%Y-%m-%d")
+        waktu = now.strftime("%H:%M:%S")
+        
+        data = {
+            "tanggal": tanggal,
+            "waktu": waktu,
+            "status_pakan": status_pakan
+        }
+        supabase.table("history_pakan").insert(data).execute()
+    except Exception as e:
+        print(f"Error simpan_histori: {e}")
 
 def ambil_data_histori():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT tanggal, waktu, status_pakan FROM history_pakan ORDER BY tanggal DESC, waktu DESC')
-    rows = cursor.fetchall()
-    df = pd.DataFrame(rows, columns=['tanggal', 'waktu', 'status_pakan'])
-    cursor.close()
-    conn.close()
-    return df
+    try:
+        # Order by tanggal DESC, waktu DESC
+        response = supabase.table("history_pakan").select("tanggal, waktu, status_pakan").order("tanggal", desc=True).order("waktu", desc=True).execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+        else:
+            return pd.DataFrame(columns=["tanggal", "waktu", "status_pakan"])
+    except Exception as e:
+        print(f"Error ambil_data_histori: {e}")
+        return pd.DataFrame(columns=["tanggal", "waktu", "status_pakan"])
 
 def simpan_perintah(pemicu):
-    wib = pytz.timezone("Asia/Jakarta")
-    now = datetime.now(wib)
-    tanggal = now.strftime("%Y-%m-%d")
-    waktu = now.strftime("%H:%M:%S")
-    
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO riwayat_perintah (tanggal, waktu, pemicu)
-        VALUES (%s, %s, %s)
-    ''', (tanggal, waktu, pemicu))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        wib = pytz.timezone("Asia/Jakarta")
+        now = datetime.now(wib)
+        tanggal = now.strftime("%Y-%m-%d")
+        waktu = now.strftime("%H:%M:%S")
+        
+        data = {
+            "tanggal": tanggal,
+            "waktu": waktu,
+            "pemicu": pemicu
+        }
+        supabase.table("riwayat_perintah").insert(data).execute()
+    except Exception as e:
+        print(f"Error simpan_perintah: {e}")
 
 def ambil_data_perintah():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT tanggal, waktu, pemicu FROM riwayat_perintah ORDER BY tanggal DESC, waktu DESC')
-    rows = cursor.fetchall()
-    df = pd.DataFrame(rows, columns=['tanggal', 'waktu', 'pemicu'])
-    cursor.close()
-    conn.close()
-    return df
+    try:
+        response = supabase.table("riwayat_perintah").select("tanggal, waktu, pemicu").order("tanggal", desc=True).order("waktu", desc=True).execute()
+        if response.data:
+            return pd.DataFrame(response.data)
+        else:
+            return pd.DataFrame(columns=["tanggal", "waktu", "pemicu"])
+    except Exception as e:
+        print(f"Error ambil_data_perintah: {e}")
+        return pd.DataFrame(columns=["tanggal", "waktu", "pemicu"])
 
 def simpan_jadwal(jadwal_str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('UPDATE pengaturan_jadwal SET jadwal_str = %s WHERE id = 1', (jadwal_str,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        # Gunakan upsert untuk baris ID 1 (menambah jika belum ada, menimpa jika ada)
+        supabase.table("pengaturan_jadwal").upsert({"id": 1, "jadwal_str": jadwal_str}).execute()
+    except Exception as e:
+        print(f"Error simpan_jadwal: {e}")
 
 def ambil_jadwal():
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT jadwal_str FROM pengaturan_jadwal WHERE id = 1')
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    if row and row[0]:
-        return row[0].split(',')
-    return ["09:00", "16:00"]
+    try:
+        response = supabase.table("pengaturan_jadwal").select("jadwal_str").eq("id", 1).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]["jadwal_str"].split(',')
+        return ["09:00", "16:00"]
+    except Exception as e:
+        print(f"Error ambil_jadwal: {e}")
+        return ["09:00", "16:00"]
