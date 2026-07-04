@@ -835,23 +835,140 @@ elif menu == "📝 Log & Histori":
         else:
             st.info("Belum ada data historis yang dapat ditampilkan.")
 
-    # [2] KONTAINER RIWAYAT PERINTAH
+    # [2] KONTAINER RIWAYAT PERINTAH (dengan Filter & Paginasi)
     with st.container(border=True):
         st.subheader("📋 Riwayat Perintah Sistem")
-        
+
         import database
+
+        # --- Inisialisasi Session State untuk Paginasi ---
+        if "current_page_riwayat" not in st.session_state:
+            st.session_state.current_page_riwayat = 1
+
         # LOGIKA HYBRID: Dahulukan memori RAM jika mode simulasi aktif
         if mqtt_client.iot_data.get("log_messages"):
-            for log in mqtt_client.iot_data["log_messages"]:
-                st.code(log)
+            data_mentah = mqtt_client.iot_data["log_messages"]
+            mode_simulasi = True
         else:
-            # Ambil data murni dari SQLite jika mode simulasi kosong
             df_perintah = database.ambil_data_perintah()
-            if not df_perintah.empty:
-                for _, row in df_perintah.iterrows():
-                    st.code(f"[{row['tanggal']} {row['waktu']}] {row['pemicu']}")
+            data_mentah = df_perintah if not df_perintah.empty else None
+            mode_simulasi = False
+
+        if data_mentah is not None and (mode_simulasi or not df_perintah.empty):
+            # --- Filter Rentang Tanggal (hanya untuk data DataFrame/realtime) ---
+            if not mode_simulasi:
+                hari_ini = datetime.now(pytz.timezone("Asia/Jakarta")).date()
+                tujuh_hari_lalu = hari_ini - timedelta(days=7)
+
+                col_filter1, col_filter2 = st.columns(2)
+                with col_filter1:
+                    tgl_mulai = st.date_input(
+                        "📅 Tanggal Mulai",
+                        value=tujuh_hari_lalu,
+                        max_value=hari_ini,
+                        key="riwayat_tgl_mulai"
+                    )
+                with col_filter2:
+                    tgl_akhir = st.date_input(
+                        "📅 Tanggal Akhir",
+                        value=hari_ini,
+                        max_value=hari_ini,
+                        key="riwayat_tgl_akhir"
+                    )
+
+                # Validasi: tanggal mulai tidak boleh melebihi tanggal akhir
+                if tgl_mulai > tgl_akhir:
+                    st.warning("⚠️ Tanggal mulai tidak boleh melebihi tanggal akhir!")
+                    tgl_mulai = tgl_akhir
+
+                # Filter DataFrame berdasarkan rentang tanggal
+                df_perintah['tanggal_dt'] = pd.to_datetime(df_perintah['tanggal']).dt.date
+                data_filter = df_perintah[
+                    (df_perintah['tanggal_dt'] >= tgl_mulai) &
+                    (df_perintah['tanggal_dt'] <= tgl_akhir)
+                ].copy()
+                data_filter = data_filter.drop(columns=['tanggal_dt'])
+                total_data = len(data_filter)
             else:
-                st.info("Tidak ada data riwayat perintah di Database.")
+                # Mode simulasi: gunakan list langsung (tanpa filter tanggal)
+                data_filter = data_mentah
+                total_data = len(data_filter)
+
+            # --- Kontrol Paginasi ---
+            col_paging_info, col_paging_select = st.columns([2, 1])
+            with col_paging_select:
+                items_per_page = st.selectbox(
+                    "Tampilkan:",
+                    options=[5, 10, 20, 50],
+                    index=1,  # Default: 10
+                    key="riwayat_items_per_page"
+                )
+
+            # Reset halaman ke 1 jika ada perubahan filter/jumlah tampilan
+            # Menggunakan tracking key untuk mendeteksi perubahan
+            filter_key_parts = [str(items_per_page)]
+            if not mode_simulasi:
+                filter_key_parts.extend([str(tgl_mulai), str(tgl_akhir)])
+            filter_key = "|".join(filter_key_parts)
+
+            if st.session_state.get("_riwayat_filter_key") != filter_key:
+                st.session_state.current_page_riwayat = 1
+                st.session_state["_riwayat_filter_key"] = filter_key
+
+            # --- Logika Pemotongan (Slicing) ---
+            total_halaman = max(1, -(-total_data // items_per_page))  # Ceiling division
+            halaman_saat_ini = min(st.session_state.current_page_riwayat, total_halaman)
+            st.session_state.current_page_riwayat = halaman_saat_ini
+
+            start_index = (halaman_saat_ini - 1) * items_per_page
+            end_index = start_index + items_per_page
+
+            with col_paging_info:
+                st.caption(f"Menampilkan {min(start_index + 1, total_data)}–{min(end_index, total_data)} dari **{total_data}** data  •  Halaman **{halaman_saat_ini}** / **{total_halaman}**")
+
+            # --- Render Data yang Sudah Di-slice ---
+            if total_data == 0:
+                st.info("Tidak ada data riwayat perintah untuk rentang tanggal yang dipilih.")
+            else:
+                if mode_simulasi:
+                    data_tampil = data_filter[start_index:end_index]
+                    for log in data_tampil:
+                        st.code(log)
+                else:
+                    data_tampil = data_filter.iloc[start_index:end_index]
+                    for _, row in data_tampil.iterrows():
+                        with st.container(border=True):
+                            st.markdown(
+                                f"🕐 `{row['tanggal']}` `{row['waktu']}`  —  **{row['pemicu']}**"
+                            )
+
+                # --- Navigasi Halaman (Tombol Sebelumnya & Selanjutnya) ---
+                col_nav_prev, col_nav_info, col_nav_next = st.columns([1, 2, 1])
+                with col_nav_prev:
+                    if st.button(
+                        "⬅️ Sebelumnya",
+                        disabled=(halaman_saat_ini <= 1),
+                        use_container_width=True,
+                        key="btn_prev_riwayat"
+                    ):
+                        st.session_state.current_page_riwayat -= 1
+                        st.rerun()
+                with col_nav_info:
+                    st.markdown(
+                        f"<p style='text-align:center; color:#888; margin-top:8px;'>Halaman {halaman_saat_ini} dari {total_halaman}</p>",
+                        unsafe_allow_html=True
+                    )
+                with col_nav_next:
+                    if st.button(
+                        "Selanjutnya ➡️",
+                        disabled=(halaman_saat_ini >= total_halaman),
+                        use_container_width=True,
+                        key="btn_next_riwayat"
+                    ):
+                        st.session_state.current_page_riwayat += 1
+                        st.rerun()
+        else:
+            st.info("Tidak ada data riwayat perintah di Database.")
 
     # [3] KONTAINER TABEL DATA STOK
     with st.container(border=True):
